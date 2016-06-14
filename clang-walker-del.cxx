@@ -11,7 +11,6 @@
 #include <string.h>
 #include <malloc.h>
 
-
 enum CXChildVisitResult visitor(
 		CXCursor cursor,
 		CXCursor parent,
@@ -46,7 +45,7 @@ enum CXChildVisitResult visitor(
 	if (cursor_kind == CXCursor_CompoundStmt) {
 		CXString pusr = clang_getCursorUSR(parent);
 		if (clang_getCString(pusr)[0])
-			db->set(clang_getCString(pusr),
+			db->del(clang_getCString(pusr),
 				prop | REF_PROP_DECL | REF_PROP_DEF,
 				line,
 				colume,
@@ -54,7 +53,7 @@ enum CXChildVisitResult visitor(
 
 		clang_disposeString(pusr);
 	} else if (clang_getCString(usr)[0]) {
-		db->set(clang_getCString(usr),
+		db->del(clang_getCString(usr),
 			prop,
 			line,
 			colume,
@@ -91,7 +90,7 @@ int main(int argc, char **argv)
 			0, 0,
 			CXTranslationUnit_None);
 	n = clang_getNumDiagnostics(tu);
-	db = new walker_db(argv[1], 1, 0);
+	db = new walker_db(argv[1], 0, 0);
 	if (db->invalid) {
 		fprintf(stderr, "Failed to open %s\n", argv[1]);
 		delete db;
@@ -117,6 +116,7 @@ int main(int argc, char **argv)
 		db);
 	clang_disposeTranslationUnit(tu);
 	clang_disposeIndex(cxindex);
+out:
 	delete db;
 	return 0;
 }

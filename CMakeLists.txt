@@ -28,3 +28,9 @@ target_link_libraries(clang-walker-query
     ${LibClang_LIBRARIES}
     ${DB_LIBRARIES}
 )
+
+add_executable(clang-walker-del ${COMMON} clang-walker-del.cxx)
+target_link_libraries(clang-walker-del
+    ${LibClang_LIBRARIES}
+    ${DB_LIBRARIES}
+)

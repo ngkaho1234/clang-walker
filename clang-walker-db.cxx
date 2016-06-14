@@ -44,13 +44,13 @@ walker_db::walker_db(const char *filename, int create, int rdonly) :
 		return;
 	}
 	ret = open(
-			NULL,
-			filename,
-			NULL,
-			DB_BTREE,
-			(create ? DB_CREATE : 0) |
-			(rdonly ? DB_RDONLY : 0),
-			0644);
+		NULL,
+		filename,
+		NULL,
+		DB_BTREE,
+		(create ? DB_CREATE : 0) |
+		(rdonly ? DB_RDONLY : 0),
+		0644);
 	if (ret) {
 		cleanup();
 		return;
@@ -235,42 +235,25 @@ int walker_db::del(
 {
 	Dbt dbt_key, dbt_data;
 	int ret = 0;
-	struct db_key *key;
-	struct ref_data data;
-	size_t usr_len = strlen(usr);
-	size_t key_len = sizeof(struct db_key) + usr_len;
-	if (prop & REF_PROP_DEF)
-		prop |= REF_PROP_DECL;
+	uint32_t prop_r;
+	unsigned long line_r, column_r;
+	uint64_t offs_r;
 
-	key = (struct db_key *)malloc(key_len);
-	if (!key)
-		return -ENOMEM;
+	ret = get(usr, &prop_r, &line_r, &column_r, &offs_r);
+	while (!ret) {
+		if (prop_r == prop &&
+				line_r == line &&
+				column_r == column &&
+				offs_r == offs)
+			break;
 
-	key->dk_usr_len = usr_len;
-	memcpy(key->dk_usr, usr, usr_len);
-
-	dbt_key.set_data(key);
-	dbt_key.set_size(key_len);
-
-	data.rd_prop = prop;
-	data.rd_line = line;
-	data.rd_column = column;
-	data.rd_offs = offs;
-
-	dbt_data.set_data(&data);
-	dbt_data.set_size(sizeof(data));
-
-	ret = dbc->get(&dbt_key, &dbt_data, DB_GET_BOTH);
+		ret = get_next(&prop_r, &line_r, &column_r, &offs_r);
+	}
 	if (ret)
 		goto out;
 
-	ret = dbc->del(0);
-
+	ret = del();
 out:
-	free(key);
-	if (curr_usr.compare(usr))
-		curr_usr.clear();
-
 	return ret;
 }
 

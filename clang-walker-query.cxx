@@ -12,12 +12,9 @@
 #include <string.h>
 #include <malloc.h>
 
-using namespace std;
-
-
-static void usage()
+static void usage(int argc, char **argv)
 {
-	fprintf(stderr, "query <Database File> <USR>\n");
+	fprintf(stderr, "Usage: %s <Database File> <USR>\n", argv[0]);
 	exit(1);
 }
 
@@ -29,11 +26,14 @@ int main(int argc, char **argv)
 	unsigned long line, column;
 	uint64_t offs;
 	if (argc != 3)
-		usage();
+		usage(argc, argv);
 
 	db = new walker_db(argv[1], 0, 1);
-	if (db->invalid)
-		goto out;
+	if (db->invalid) {
+		fprintf(stderr, "Failed to open %s\n", argv[1]);
+		delete db;
+		exit(1);
+	}
 
 	ret = db->get(
 		argv[2],
@@ -50,7 +50,7 @@ int main(int argc, char **argv)
 			line, column, offs);
 		ret = db->get_next(&prop, &line, &column, &offs);
 	}
-out:
+
 	delete db;
 	return 0;
 }
