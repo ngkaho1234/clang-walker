@@ -8,6 +8,8 @@ find_package(Boost REQUIRED)
 find_package(LibClang REQUIRED)
 find_package(BerkeleyDB REQUIRED)
 
+set(COMMON clang-walker-db.cxx)
+
 include_directories(
     SYSTEM
     ${Boost_INCLUDE_DIRS}
@@ -15,8 +17,14 @@ include_directories(
     ${DB_INCLUDE_DIRS}
 )
 
-add_executable(clang-walker clang-walker.cxx)
+add_executable(clang-walker ${COMMON} clang-walker.cxx)
 target_link_libraries(clang-walker
+    ${LibClang_LIBRARIES}
+    ${DB_LIBRARIES}
+)
+
+add_executable(clang-walker-query ${COMMON} clang-walker-query.cxx)
+target_link_libraries(clang-walker-query
     ${LibClang_LIBRARIES}
     ${DB_LIBRARIES}
 )
