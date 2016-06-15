@@ -33,7 +33,7 @@ void walker_ref::get_fname(std::string *fname)
 	if (data)
 		fname->assign(data->rd_fname, data->rd_fname_len);
 	else
-		*fname = "";
+		fname->assign("");
 }
 
 void walker_ref::assign(
