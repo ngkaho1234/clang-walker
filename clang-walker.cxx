@@ -38,11 +38,11 @@ enum CXChildVisitResult visitor(
 	printf("USR: %s, cursor_kind: %s, "
 		"cursor_type: %s, spelling: %s, "
 		"line: %d, column: %d, offs: %d, "
-		"isReference: %d\n",
+		"fname: %s\n",
 		clang_getCString(usr), clang_getCString(kind_spelling),
 		clang_getCString(type_spelling), clang_getCString(spelling),
 		line, column, offs,
-		clang_isReference(cursor_kind));
+		clang_getCString(fname));
 
 	if (clang_isDeclaration(cursor_kind))
 		prop = REF_PROP_DECL;
