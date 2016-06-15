@@ -21,23 +21,27 @@ enum CXChildVisitResult visitor(
 	CXType cursor_type = clang_getCursorType(cursor);
 	CXCursorKind cursor_kind = clang_getCursorKind(cursor);
 	CXCursorKind pcursor_kind = clang_getCursorKind(parent);
+	CXFile file;
 
+	CXString fname;
 	CXString usr = clang_getCursorUSR(cursor);
 	CXString spelling = clang_getCursorSpelling(cursor);
 	CXString type_spelling = clang_getTypeKindSpelling(cursor_type.kind);
 	CXString kind_spelling = clang_getCursorKindSpelling(cursor_kind);
 	CXSourceLocation location = clang_getCursorLocation(cursor);
-	unsigned int line, colume, offs;
+	unsigned int line, column, offs;
 	uint32_t prop = 0;
+	walker_ref ref;
 
-	clang_getSpellingLocation(location, NULL, &line, &colume, &offs);
+	clang_getSpellingLocation(location, &file, &line, &column, &offs);
+	fname = clang_getFileName(file);
 	printf("USR: %s, cursor_kind: %s, "
 		"cursor_type: %s, spelling: %s, "
-		"line: %d, colume: %d, offs: %d, "
+		"line: %d, column: %d, offs: %d, "
 		"isReference: %d\n",
 		clang_getCString(usr), clang_getCString(kind_spelling),
 		clang_getCString(type_spelling), clang_getCString(spelling),
-		line, colume, offs,
+		line, column, offs,
 		clang_isReference(cursor_kind));
 
 	if (clang_isDeclaration(cursor_kind))
@@ -45,20 +49,23 @@ enum CXChildVisitResult visitor(
 
 	if (cursor_kind == CXCursor_CompoundStmt) {
 		CXString pusr = clang_getCursorUSR(parent);
+		std::string pusr_str = clang_getCString(pusr);
+		ref.assign(
+			prop | REF_PROP_DECL | REF_PROP_DEF,
+			line, column, offs, &pusr_str);
+
 		if (clang_getCString(pusr)[0])
 			db->set(clang_getCString(pusr),
-				prop | REF_PROP_DECL | REF_PROP_DEF,
-				line,
-				colume,
-				offs);
+				&ref);
 
 		clang_disposeString(pusr);
 	} else if (clang_getCString(usr)[0]) {
-		db->set(clang_getCString(usr),
+		std::string usr_str = clang_getCString(usr);
+		ref.assign(
 			prop,
-			line,
-			colume,
-			offs);
+			line, column, offs, &usr_str);
+		db->set(clang_getCString(usr),
+			&ref);
 	}
 
 	clang_disposeString(usr);

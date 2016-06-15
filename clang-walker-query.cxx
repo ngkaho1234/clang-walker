@@ -22,9 +22,8 @@ int main(int argc, char **argv)
 {
 	int ret;
 	walker_db *db;
-	uint32_t prop;
-	unsigned long line, column;
-	uint64_t offs;
+	walker_ref ref;
+	struct ref_data *ptr;
 	if (argc != 3)
 		usage(argc, argv);
 
@@ -37,18 +36,16 @@ int main(int argc, char **argv)
 
 	ret = db->get(
 		argv[2],
-		&prop,
-		&line,
-		&column,
-		&offs);
+		&ref);
 	while (!ret) {
+		ptr = ref.get_data();
 		printf("USR: %s, "
 			"prop: %u, "
-			"line: %lu, column: %lu, offs: %llu\n",
+			"line: %u, column: %u, offs: %llu\n",
 			argv[2],
-			prop,
-			line, column, offs);
-		ret = db->get_next(&prop, &line, &column, &offs);
+			ptr->rd_prop,
+			ptr->rd_line, ptr->rd_column, ptr->rd_offs);
+		ret = db->get_next(&ref);
 	}
 
 	delete db;

@@ -21,7 +21,51 @@ struct ref_data {
 	uint32_t	rd_line;
 	uint32_t	rd_column;
 	uint64_t	rd_offs;
+	uint32_t	rd_fname_len;
+	char		rd_fname[0];
 } __attribute__((packed));
+
+class walker_ref {
+	size_t		 data_len;
+	struct ref_data *data;
+
+public:
+	walker_ref(
+		uint32_t prop,
+		unsigned long line,
+		unsigned long column,
+		uint64_t offs,
+		std::string *fname);
+
+	walker_ref();
+
+	walker_ref(struct ref_data *ref);
+
+	struct ref_data *get_data()
+	{
+		return data;
+	}
+
+	size_t get_size()
+	{
+		return data_len;
+	}
+
+	void get_fname(std::string *fname);
+
+	void assign(
+		uint32_t prop,
+		unsigned long line,
+		unsigned long column,
+		uint64_t offs,
+		std::string *fname);
+
+	void assign(struct ref_data *ref);
+
+	bool operator ==(walker_ref &ref);
+
+	~walker_ref();
+};
 
 class walker_db : Db {
 	Dbc *dbc;
@@ -37,30 +81,17 @@ public:
 	virtual ~walker_db();
 
 	int get(const char *usr,
-		uint32_t *prop,
-		unsigned long *line,
-		unsigned long *column,
-		uint64_t *offs);
+		walker_ref *ref);
 
-	int get_next(
-		uint32_t *prop,
-		unsigned long *line,
-		unsigned long *column,
-		uint64_t *offs);
+	int get_next(walker_ref *ref);
 
 	int set(const char *usr,
-		uint32_t prop,
-		unsigned long line,
-		unsigned long column,
-		uint64_t offs);
+		walker_ref *ref);
 
 	int del();
 
 	int del(const char *usr,
-		uint32_t prop,
-		unsigned long line,
-		unsigned long column,
-		uint64_t offs);
+		walker_ref *ref);
 };
 
 #endif // _CLANG_WALKER_DB_HXX_

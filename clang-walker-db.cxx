@@ -10,6 +10,102 @@
 #include <string.h>
 #include <malloc.h>
 
+walker_ref::walker_ref(
+		uint32_t prop,
+		unsigned long line,
+		unsigned long column,
+		uint64_t offs,
+		std::string *fname) : data_len(0), data(NULL)
+{
+	assign(prop, line, column, offs, fname);
+}
+
+walker_ref::walker_ref() : data_len(0), data(NULL) {}
+
+walker_ref::~walker_ref()
+{
+	if (data)
+		free(data);
+}
+
+void walker_ref::get_fname(std::string *fname)
+{
+	if (data)
+		fname->assign(data->rd_fname, data->rd_fname_len);
+	else
+		*fname = "";
+}
+
+void walker_ref::assign(
+		uint32_t prop,
+		unsigned long line,
+		unsigned long column,
+		uint64_t offs,
+		std::string *fname)
+{
+	size_t fname_len = fname->length();
+	size_t ref_len = sizeof(struct ref_data) + fname_len;
+	struct ref_data *mem = (struct ref_data *)malloc(ref_len);
+
+	assert(mem);
+	if (data)
+		free(data);
+
+	data = mem;
+	data_len = ref_len;
+
+	data->rd_prop = prop;
+	data->rd_line = line;
+	data->rd_column = column;
+	data->rd_offs = offs;
+	data->rd_fname_len = fname_len;
+	memcpy(data->rd_fname, fname->c_str(), fname_len);
+}
+
+void walker_ref::assign(struct ref_data *ref)
+{
+	size_t ref_len = sizeof(struct ref_data) + ref->rd_fname_len;
+	struct ref_data *mem = (struct ref_data *)malloc(ref_len);
+
+	assert(mem);
+	if (data)
+		free(data);
+
+	data = mem;
+	data_len = ref_len;
+	memcpy(data, ref, ref_len);
+}
+
+walker_ref::walker_ref(struct ref_data *ref) : data_len(0), data(NULL)
+{
+	assign(ref);
+}
+
+bool walker_ref::operator ==(walker_ref &ref)
+{
+	struct ref_data *tmp = ref.get_data();
+	if (!tmp && !data)
+		return true;
+
+	if (!tmp && data)
+		return false;
+
+	if (tmp && !data)
+		return false;
+
+	if (tmp->rd_prop == data->rd_prop &&
+			tmp->rd_line == data->rd_line &&
+			tmp->rd_column == data->rd_column &&
+			tmp->rd_fname_len == data->rd_fname_len &&
+			!memcmp(tmp->rd_fname,
+				data->rd_fname,
+				data->rd_fname_len)) {
+		return true;
+	}
+
+	return false;
+}
+
 static int walker_db_key_cmp(
 		DB *db,
 		const DBT *dbt1,
@@ -30,7 +126,7 @@ void walker_db::cleanup()
 }
 
 walker_db::walker_db(const char *filename, int create, int rdonly) :
-	Db(NULL, DB_CXX_NO_EXCEPTIONS), invalid(0), dbc(NULL)
+	Db(NULL, DB_CXX_NO_EXCEPTIONS), dbc(NULL), invalid(0)
 {
 	int ret;
 	ret = set_bt_compare(walker_db_key_cmp);
@@ -69,10 +165,7 @@ walker_db::~walker_db()
 
 int walker_db::get(
 		const char *usr,
-		uint32_t *prop,
-		unsigned long *line,
-		unsigned long *column,
-		uint64_t *offs)
+		walker_ref *ref)
 {
 	Dbt dbt_key, dbt_data;
 	int ret = 0;
@@ -97,14 +190,7 @@ int walker_db::get(
 
 	data = (struct ref_data *)dbt_data.get_data();
 	assert(data);
-	if (prop)
-		*prop = data->rd_prop;
-	if (line)
-		*line = data->rd_line;
-	if (column)
-		*column = data->rd_column;
-	if (offs)
-		*offs = data->rd_offs;
+	ref->assign(data);
 
 out:
 	free(key);
@@ -114,11 +200,7 @@ out:
 	return ret;
 }
 
-int walker_db::get_next(
-		uint32_t *prop,
-		unsigned long *line,
-		unsigned long *column,
-		uint64_t *offs)
+int walker_db::get_next(walker_ref *ref)
 {
 	Dbt dbt_key;
 	Dbt dbt_data;
@@ -147,14 +229,7 @@ int walker_db::get_next(
 
 	data = (struct ref_data *)dbt_data.get_data();
 	assert(data);
-	if (prop)
-		*prop = data->rd_prop;
-	if (line)
-		*line = data->rd_line;
-	if (column)
-		*column = data->rd_column;
-	if (offs)
-		*offs = data->rd_offs;
+	ref->assign(data);
 
 out:
 	free(key);
@@ -163,19 +238,14 @@ out:
 
 int walker_db::set(
 		const char *usr,
-		uint32_t prop,
-		unsigned long line,
-		unsigned long column,
-		uint64_t offs)
+		walker_ref *ref)
 {
 	Dbt dbt_key, dbt_data, dump;
 	int ret = 0, notfound = 0;
 	struct db_key *key;
-	struct ref_data data;
+	struct ref_data *data = ref->get_data();
 	size_t usr_len = strlen(usr);
 	size_t key_len = sizeof(struct db_key) + usr_len;
-	if (prop & REF_PROP_DEF)
-		prop |= REF_PROP_DECL;
 
 	key = (struct db_key *)malloc(key_len);
 	if (!key)
@@ -195,15 +265,10 @@ int walker_db::set(
 	if (ret)
 		goto out;
 
-	data.rd_prop = prop;
-	data.rd_line = line;
-	data.rd_column = column;
-	data.rd_offs = offs;
+	dbt_data.set_data(data);
+	dbt_data.set_size(ref->get_size());
 
-	dbt_data.set_data(&data);
-	dbt_data.set_size(sizeof(data));
-
-	if (prop & REF_PROP_DEF || notfound)
+	if (data->rd_prop & REF_PROP_DEF || notfound)
 		ret = dbc->put(&dbt_key, &dbt_data, DB_KEYFIRST);
 	else
 		ret = dbc->put(&dbt_key, &dbt_data, DB_AFTER);
@@ -228,26 +293,17 @@ int walker_db::del()
 
 int walker_db::del(
 		const char *usr,
-		uint32_t prop,
-		unsigned long line,
-		unsigned long column,
-		uint64_t offs)
+		walker_ref *ref)
 {
-	Dbt dbt_key, dbt_data;
 	int ret = 0;
-	uint32_t prop_r;
-	unsigned long line_r, column_r;
-	uint64_t offs_r;
+	walker_ref ref_r;
 
-	ret = get(usr, &prop_r, &line_r, &column_r, &offs_r);
+	ret = get(usr, &ref_r);
 	while (!ret) {
-		if (prop_r == prop &&
-				line_r == line &&
-				column_r == column &&
-				offs_r == offs)
+		if (*ref == ref_r)
 			break;
 
-		ret = get_next(&prop_r, &line_r, &column_r, &offs_r);
+		ret = get_next(&ref_r);
 	}
 	if (ret)
 		goto out;
