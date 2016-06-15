@@ -49,10 +49,10 @@ enum CXChildVisitResult visitor(
 
 	if (cursor_kind == CXCursor_CompoundStmt) {
 		CXString pusr = clang_getCursorUSR(parent);
-		std::string pusr_str = clang_getCString(pusr);
+		std::string fname_str = clang_getCString(fname);
 		ref.assign(
 			prop | REF_PROP_DECL | REF_PROP_DEF,
-			line, column, offs, &pusr_str);
+			line, column, offs, &fname_str);
 
 		if (clang_getCString(pusr)[0])
 			db->set(clang_getCString(pusr),
@@ -60,15 +60,16 @@ enum CXChildVisitResult visitor(
 
 		clang_disposeString(pusr);
 	} else if (clang_getCString(usr)[0]) {
-		std::string usr_str = clang_getCString(usr);
+		std::string fname_str = clang_getCString(fname);
 		ref.assign(
 			prop,
-			line, column, offs, &usr_str);
+			line, column, offs, &fname_str);
 		db->set(clang_getCString(usr),
 			&ref);
 	}
 
 	clang_disposeString(usr);
+	clang_disposeString(fname);
 	clang_disposeString(type_spelling);
 	clang_disposeString(kind_spelling);
 	clang_disposeString(spelling);

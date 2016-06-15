@@ -38,13 +38,17 @@ int main(int argc, char **argv)
 		argv[2],
 		&ref);
 	while (!ret) {
+		std::string fname;
 		ptr = ref.get_data();
+		ref.get_fname(&fname);
 		printf("USR: %s, "
 			"prop: %u, "
-			"line: %u, column: %u, offs: %llu\n",
+			"line: %u, column: %u, offs: %llu, "
+			"fname: %s\n",
 			argv[2],
 			ptr->rd_prop,
-			ptr->rd_line, ptr->rd_column, ptr->rd_offs);
+			ptr->rd_line, ptr->rd_column, ptr->rd_offs,
+			fname.c_str());
 		ret = db->get_next(&ref);
 	}
 
