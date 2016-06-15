@@ -10,6 +10,76 @@
 #include <errno.h>
 #include <string.h>
 #include <malloc.h>
+#include <string>
+
+std::string cursor_name_str(CXCursor cursor)
+{
+	std::string str;
+	CXString name = clang_getCursorSpelling(cursor);
+	str = clang_getCString(name);
+	clang_disposeString(name);
+	return str;
+}
+
+std::string file_name_str(CXFile file)
+{
+	std::string str;
+	CXString fname = clang_getFileName(file);
+	str = clang_getCString(fname);
+	clang_disposeString(fname);
+	return str;
+}
+
+std::string cursor_usr_str(CXCursor cursor)
+{
+	std::string str;
+	CXString usr = clang_getCursorUSR(cursor);
+	str = clang_getCString(usr);
+	clang_disposeString(usr);
+	return str;
+}
+
+std::string cursor_type_str(CXCursor cursor)
+{
+	std::string str;
+	CXString type = clang_getTypeKindSpelling(
+				clang_getCursorType(cursor).kind);
+	str = clang_getCString(type);
+	clang_disposeString(type);
+	return str;
+}
+
+std::string cursor_kind_str(CXCursor cursor)
+{
+	std::string str;
+	CXString kind = clang_getCursorKindSpelling(
+				clang_getCursorKind(cursor));
+	str = clang_getCString(kind);
+	clang_disposeString(kind);
+	return str;
+}
+
+std::string cursor_linkage_str(CXCursor cursor)
+{
+	std::string str;
+	CXLinkageKind linkage = clang_getCursorLinkage(cursor);
+	const char *linkage_str;
+
+	//
+	// This conversion table is taken from
+	// https://github.com/sabottenda/libclang-sample
+	//
+	switch (linkage) {
+		case CXLinkage_Invalid:        linkage_str = "Invalid"; break;
+		case CXLinkage_NoLinkage:      linkage_str = "NoLinkage"; break;
+		case CXLinkage_Internal:       linkage_str = "Internal"; break;
+		case CXLinkage_UniqueExternal: linkage_str = "UniqueExternal"; break;
+		case CXLinkage_External:       linkage_str = "External"; break;
+		default:                       linkage_str = "Unknown"; break;
+	}
+	str = linkage_str;
+	return str;
+}
 
 enum CXChildVisitResult visitor(
 		CXCursor cursor,
@@ -22,56 +92,59 @@ enum CXChildVisitResult visitor(
 	CXCursorKind pcursor_kind = clang_getCursorKind(parent);
 	CXFile file;
 
-	CXString fname;
-	CXString usr = clang_getCursorUSR(cursor);
-	CXString spelling = clang_getCursorSpelling(cursor);
-	CXString type_spelling = clang_getTypeKindSpelling(cursor_type.kind);
-	CXString kind_spelling = clang_getCursorKindSpelling(cursor_kind);
+	std::string fname;
+	std::string usr_str = cursor_usr_str(cursor);
+	std::string name_str = cursor_name_str(cursor);
+	std::string type_str = cursor_type_str(cursor);
+	std::string kind_str = cursor_kind_str(cursor);
 	CXSourceLocation location = clang_getCursorLocation(cursor);
 	unsigned int line, column, offs;
 	uint32_t prop = 0;
 	walker_ref ref;
 
 	clang_getSpellingLocation(location, &file, &line, &column, &offs);
-	fname = clang_getFileName(file);
+	fname = file_name_str(file);
+
 	printf("USR: %s, cursor_kind: %s, "
+		"cursor_linkage: %s, "
 		"cursor_type: %s, spelling: %s, "
 		"line: %d, column: %d, offs: %d, "
 		"fname: %s\n",
-		clang_getCString(usr), clang_getCString(kind_spelling),
-		clang_getCString(type_spelling), clang_getCString(spelling),
+		usr_str.c_str(), kind_str.c_str(),
+		cursor_linkage_str(cursor).c_str(),
+		type_str.c_str(), name_str.c_str(),
 		line, column, offs,
-		clang_getCString(fname));
+		fname.c_str());
 
 	if (clang_isDeclaration(cursor_kind))
 		prop = REF_PROP_DECL;
 
 	if (cursor_kind == CXCursor_CompoundStmt) {
-		CXString pusr = clang_getCursorUSR(parent);
-		std::string fname_str = clang_getCString(fname);
-		ref.assign(
-			prop | REF_PROP_DECL | REF_PROP_DEF,
-			line, column, offs, &fname_str);
+		std::string pusr_str = cursor_usr_str(parent);
+		CXSourceLocation plocation =
+			clang_getCursorLocation(parent);
 
-		if (clang_getCString(pusr)[0])
-			db->del(clang_getCString(pusr),
-				&ref);
-
-		clang_disposeString(pusr);
-	} else if (clang_getCString(usr)[0]) {
-		std::string fname_str = clang_getCString(fname);
+		prop |= REF_PROP_DEF | REF_PROP_DECL;
+		clang_getSpellingLocation(
+				plocation,
+				NULL,
+				&line, &column, &offs);
 		ref.assign(
 			prop,
-			line, column, offs, &fname_str);
-		db->del(clang_getCString(usr),
+			line, column, offs, &fname);
+
+		if (!pusr_str.empty())
+			db->del(pusr_str.c_str(),
+				&ref);
+
+	} else if (usr_str.empty()) {
+		ref.assign(
+			prop,
+			line, column, offs, &fname);
+		db->del(usr_str.c_str(),
 			&ref);
 	}
 
-	clang_disposeString(usr);
-	clang_disposeString(fname);
-	clang_disposeString(type_spelling);
-	clang_disposeString(kind_spelling);
-	clang_disposeString(spelling);
 	return CXChildVisit_Recurse;
 }
 
