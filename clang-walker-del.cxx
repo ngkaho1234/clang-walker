@@ -137,7 +137,7 @@ enum CXChildVisitResult visitor(
 			db->del(pusr_str.c_str(),
 				&ref);
 
-	} else if (usr_str.empty()) {
+	} else if (!usr_str.empty()) {
 		ref.assign(
 			prop,
 			line, column, offs, &fname);
