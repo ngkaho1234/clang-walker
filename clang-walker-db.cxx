@@ -178,6 +178,7 @@ int walker_db::get(
 	if (!key)
 		return -ENOMEM;
 
+	key->dk_hdr.kh_type = KEY_USR;
 	key->dk_usr_len = usr_len;
 	memcpy(key->dk_usr, usr, usr_len);
 
@@ -220,6 +221,7 @@ int walker_db::get_next(walker_ref *ref)
 	dbt_key.set_data(key);
 	dbt_key.set_size(key_len);
 
+	key->dk_hdr.kh_type = KEY_USR;
 	key->dk_usr_len = usr_len;
 	memcpy(key->dk_usr, curr_usr.c_str(), usr_len);
 
@@ -251,6 +253,7 @@ int walker_db::set(
 	if (!key)
 		return -ENOMEM;
 
+	key->dk_hdr.kh_type = KEY_USR;
 	key->dk_usr_len = usr_len;
 	memcpy(key->dk_usr, usr, usr_len);
 
@@ -331,6 +334,11 @@ static int walker_db_key_cmp(
 	struct db_key *key2 = (struct db_key *)dbt2->data;
 
 	(void)db;
+	if (key1->dk_hdr.kh_type < key2->dk_hdr.kh_type)
+		return -1;
+
+	if (key1->dk_hdr.kh_type > key2->dk_hdr.kh_type)
+		return 1;
 
 	if (key1->dk_usr_len < key2->dk_usr_len)
 		return -1;

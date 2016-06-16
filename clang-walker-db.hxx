@@ -5,13 +5,20 @@
 
 #include <string>
 
+#define KEY_USR 0
+
 #define REF_PROP_DECL 1
 #define REF_PROP_DEF 2
 
 /*
  * Common key header
  */
+struct db_key_hdr {
+	uint32_t	kh_type;
+};
+
 struct db_key {
+	struct db_key_hdr dk_hdr;
 	uint32_t	dk_usr_len;
 	char		dk_usr[0];
 } __attribute__((packed));
