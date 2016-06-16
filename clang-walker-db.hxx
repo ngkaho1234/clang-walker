@@ -77,7 +77,21 @@ public:
 class walker_db : Db {
 	Dbc *dbc;
 	std::string curr_usr;
-private:
+	void set_dbc(Dbc *new_dbc, std::string &usr)
+	{
+		dbc = new_dbc;
+		curr_usr = usr;
+	}
+
+	void clear_dbc()
+	{
+		curr_usr.clear();
+		if (dbc)
+			dbc->close();
+
+		dbc = NULL;
+	}
+
 	void cleanup();
 
 public:

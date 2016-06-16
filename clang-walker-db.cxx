@@ -114,11 +114,7 @@ static int walker_db_key_cmp(
 void walker_db::cleanup()
 {
 	if (!invalid) {
-		if (dbc) {
-			dbc->close();
-			dbc = NULL;
-		}
-
+		clear_dbc();
 		close(0);
 	}
 
@@ -151,11 +147,6 @@ walker_db::walker_db(const char *filename, int create, int rdonly) :
 		cleanup();
 		return;
 	}
-	ret = cursor(NULL, &dbc, DB_CURSOR_BULK);
-	if (ret) {
-		cleanup();
-		return;
-	}
 }
 
 walker_db::~walker_db()
@@ -167,6 +158,7 @@ int walker_db::get(
 		const char *usr,
 		walker_ref *ref)
 {
+	Dbc *new_dbc = NULL;
 	Dbt dbt_key, dbt_data;
 	int ret = 0;
 	struct db_key *key;
@@ -174,9 +166,15 @@ int walker_db::get(
 	size_t usr_len = strlen(usr);
 	size_t key_len = sizeof(struct db_key) + usr_len;
 
+	clear_dbc();
+
 	key = (struct db_key *)malloc(key_len);
 	if (!key)
 		return -ENOMEM;
+
+	ret = cursor(NULL, &new_dbc, DB_CURSOR_BULK);
+	if (ret)
+		goto out;
 
 	key->dk_hdr.kh_type = KEY_USR;
 	key->dk_usr_len = usr_len;
@@ -185,7 +183,7 @@ int walker_db::get(
 	dbt_key.set_data(key);
 	dbt_key.set_size(key_len);
 
-	ret = dbc->get(&dbt_key, &dbt_data, DB_SET);
+	ret = new_dbc->get(&dbt_key, &dbt_data, DB_SET);
 	if (ret)
 		goto out;
 
@@ -195,8 +193,14 @@ int walker_db::get(
 
 out:
 	free(key);
-	if (!ret)
-		curr_usr = usr;
+	if (!ret) {
+		std::string usr_str = usr;
+		set_dbc(new_dbc, usr_str);
+	} else {
+		if (new_dbc)
+			new_dbc->close();
+
+	}
 
 	return ret;
 }
@@ -211,12 +215,14 @@ int walker_db::get_next(walker_ref *ref)
 	size_t usr_len = curr_usr.length();
 	size_t key_len = sizeof(struct db_key) + usr_len;
 
+	if (!dbc || curr_usr.empty()) {
+		clear_dbc();
+		return DB_KEYEMPTY;
+	}
+
 	key = (struct db_key *)malloc(key_len);
 	if (!key)
 		return -ENOMEM;
-
-	if (curr_usr.empty())
-		return DB_KEYEMPTY;
 
 	dbt_key.set_data(key);
 	dbt_key.set_size(key_len);
@@ -242,6 +248,7 @@ int walker_db::set(
 		const char *usr,
 		walker_ref *ref)
 {
+	Dbc *new_dbc = NULL;
 	Dbt dbt_key, dbt_data, dump;
 	int ret = 0, notfound = 0;
 	struct db_key *key;
@@ -249,9 +256,15 @@ int walker_db::set(
 	size_t usr_len = strlen(usr);
 	size_t key_len = sizeof(struct db_key) + usr_len;
 
+	clear_dbc();
+
 	key = (struct db_key *)malloc(key_len);
 	if (!key)
 		return -ENOMEM;
+
+	ret = cursor(NULL, &new_dbc, DB_CURSOR_BULK);
+	if (ret)
+		goto out;
 
 	key->dk_hdr.kh_type = KEY_USR;
 	key->dk_usr_len = usr_len;
@@ -260,7 +273,7 @@ int walker_db::set(
 	dbt_key.set_data(key);
 	dbt_key.set_size(key_len);
 
-	ret = dbc->get(&dbt_key, &dump, DB_SET);
+	ret = new_dbc->get(&dbt_key, &dump, DB_SET);
 	if (ret == DB_NOTFOUND) {
 		notfound = 1;
 		ret = 0;
@@ -272,25 +285,24 @@ int walker_db::set(
 	dbt_data.set_size(ref->get_size());
 
 	if (data->rd_prop & REF_PROP_DEF || notfound)
-		ret = dbc->put(&dbt_key, &dbt_data, DB_KEYFIRST);
+		ret = new_dbc->put(&dbt_key, &dbt_data, DB_KEYFIRST);
 	else
-		ret = dbc->put(&dbt_key, &dbt_data, DB_AFTER);
+		ret = new_dbc->put(&dbt_key, &dbt_data, DB_AFTER);
 
 out:
 	free(key);
-	if (!ret)
-		curr_usr = usr;
-
+	if (new_dbc)
+		new_dbc->close();
 	return ret;
 }
 
 int walker_db::del()
 {
 	int ret = 0;
-	ret = dbc->del(0);
-	if (!ret)
-		curr_usr.clear();
+	if (dbc && !curr_usr.empty())
+		ret = dbc->del(0);
 
+	clear_dbc();
 	return ret;
 }
 
