@@ -16,7 +16,10 @@ std::string cursor_name_str(CXCursor cursor)
 {
 	std::string str;
 	CXString name = clang_getCursorSpelling(cursor);
-	str = clang_getCString(name);
+	const char *name_cstr = clang_getCString(name);
+	if (name_cstr)
+		str = name_cstr;
+
 	clang_disposeString(name);
 	return str;
 }
@@ -25,7 +28,10 @@ std::string file_name_str(CXFile file)
 {
 	std::string str;
 	CXString fname = clang_getFileName(file);
-	str = clang_getCString(fname);
+	const char *fname_cstr = clang_getCString(fname);
+	if (fname_cstr)
+		str = fname_cstr;
+
 	clang_disposeString(fname);
 	return str;
 }
@@ -34,7 +40,10 @@ std::string cursor_usr_str(CXCursor cursor)
 {
 	std::string str;
 	CXString usr = clang_getCursorUSR(cursor);
-	str = clang_getCString(usr);
+	const char *usr_cstr = clang_getCString(usr);
+	if (usr_cstr)
+		str = usr_cstr;
+
 	clang_disposeString(usr);
 	return str;
 }
@@ -44,7 +53,10 @@ std::string cursor_type_str(CXCursor cursor)
 	std::string str;
 	CXString type = clang_getTypeKindSpelling(
 				clang_getCursorType(cursor).kind);
-	str = clang_getCString(type);
+	const char *type_cstr = clang_getCString(type);
+	if (type_cstr)
+		str = type_cstr;
+
 	clang_disposeString(type);
 	return str;
 }
@@ -54,7 +66,10 @@ std::string cursor_kind_str(CXCursor cursor)
 	std::string str;
 	CXString kind = clang_getCursorKindSpelling(
 				clang_getCursorKind(cursor));
-	str = clang_getCString(kind);
+	const char *kind_cstr = clang_getCString(kind);
+	if (kind_cstr)
+		str = kind_cstr;
+
 	clang_disposeString(kind);
 	return str;
 }
