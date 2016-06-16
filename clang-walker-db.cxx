@@ -287,7 +287,7 @@ int walker_db::set(
 	if (data->rd_prop & REF_PROP_DEF || notfound)
 		ret = new_dbc->put(&dbt_key, &dbt_data, DB_KEYFIRST);
 	else
-		ret = new_dbc->put(&dbt_key, &dbt_data, DB_AFTER);
+		ret = new_dbc->put(&dbt_key, &dbt_data, DB_KEYLAST);
 
 out:
 	free(key);
