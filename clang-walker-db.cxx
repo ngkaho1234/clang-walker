@@ -250,7 +250,7 @@ int walker_db::set(
 {
 	Dbc *new_dbc = NULL;
 	Dbt dbt_key, dbt_data, dump;
-	int ret = 0, notfound = 0;
+	int ret = 0;
 	struct db_key *key;
 	struct ref_data *data = ref->get_data();
 	size_t usr_len = strlen(usr);
@@ -273,18 +273,10 @@ int walker_db::set(
 	dbt_key.set_data(key);
 	dbt_key.set_size(key_len);
 
-	ret = new_dbc->get(&dbt_key, &dump, DB_SET);
-	if (ret == DB_NOTFOUND) {
-		notfound = 1;
-		ret = 0;
-	}
-	if (ret)
-		goto out;
-
 	dbt_data.set_data(data);
 	dbt_data.set_size(ref->get_size());
 
-	if (data->rd_prop & REF_PROP_DEF || notfound)
+	if (data->rd_prop & REF_PROP_DEF)
 		ret = new_dbc->put(&dbt_key, &dbt_data, DB_KEYFIRST);
 	else
 		ret = new_dbc->put(&dbt_key, &dbt_data, DB_KEYLAST);
