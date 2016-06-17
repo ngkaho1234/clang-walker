@@ -217,7 +217,7 @@ int walker_db::get_next(walker_ref *ref)
 
 	if (!dbc || curr_usr.empty()) {
 		clear_dbc();
-		return DB_KEYEMPTY;
+		return DB_NOTFOUND;
 	}
 
 	key = (struct db_key *)malloc(key_len);
