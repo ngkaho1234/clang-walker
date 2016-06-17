@@ -69,7 +69,7 @@ int main(int argc, char **argv)
 	clang_visitChildren(
 		clang_getTranslationUnitCursor(tu),
 		walker_visitor,
-		db);
+		&visitor);
 
 	clang_disposeTranslationUnit(tu);
 	clang_disposeIndex(cxindex);
