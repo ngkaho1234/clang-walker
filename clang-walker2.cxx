@@ -15,11 +15,8 @@
 std::string cursor_name_str(CXCursor cursor)
 {
 	std::string str;
-	CXString name = clang_getCursorSpelling(cursor);
-	const char *name_cstr = clang_getCString(name);
-	if (name_cstr)
-		str = name_cstr;
-
+	CXString name = clang_getCursorDisplayName(cursor);
+	str = clang_getCString(name);
 	clang_disposeString(name);
 	return str;
 }
@@ -28,10 +25,7 @@ std::string file_name_str(CXFile file)
 {
 	std::string str;
 	CXString fname = clang_getFileName(file);
-	const char *fname_cstr = clang_getCString(fname);
-	if (fname_cstr)
-		str = fname_cstr;
-
+	str = clang_getCString(fname);
 	clang_disposeString(fname);
 	return str;
 }
@@ -40,10 +34,7 @@ std::string cursor_usr_str(CXCursor cursor)
 {
 	std::string str;
 	CXString usr = clang_getCursorUSR(cursor);
-	const char *usr_cstr = clang_getCString(usr);
-	if (usr_cstr)
-		str = usr_cstr;
-
+	str = clang_getCString(usr);
 	clang_disposeString(usr);
 	return str;
 }
@@ -53,10 +44,7 @@ std::string cursor_type_str(CXCursor cursor)
 	std::string str;
 	CXString type = clang_getTypeKindSpelling(
 				clang_getCursorType(cursor).kind);
-	const char *type_cstr = clang_getCString(type);
-	if (type_cstr)
-		str = type_cstr;
-
+	str = clang_getCString(type);
 	clang_disposeString(type);
 	return str;
 }
@@ -66,10 +54,7 @@ std::string cursor_kind_str(CXCursor cursor)
 	std::string str;
 	CXString kind = clang_getCursorKindSpelling(
 				clang_getCursorKind(cursor));
-	const char *kind_cstr = clang_getCString(kind);
-	if (kind_cstr)
-		str = kind_cstr;
-
+	str = clang_getCString(kind);
 	clang_disposeString(kind);
 	return str;
 }
@@ -102,12 +87,13 @@ enum CXChildVisitResult visitor(
 		CXClientData data)
 {
 	walker_db *db = (walker_db *)data;
-	CXCursor referenced = clang_getCursorReferenced(cursor);
+	CXType cursor_type = clang_getCursorType(cursor);
 	CXCursorKind cursor_kind = clang_getCursorKind(cursor);
+	CXCursorKind pcursor_kind = clang_getCursorKind(parent);
 	CXFile file;
 
 	std::string fname;
-	std::string usr_str = cursor_usr_str(referenced);
+	std::string usr_str = cursor_usr_str(cursor);
 	std::string name_str = cursor_name_str(cursor);
 	std::string type_str = cursor_type_str(cursor);
 	std::string kind_str = cursor_kind_str(cursor);
@@ -119,7 +105,7 @@ enum CXChildVisitResult visitor(
 	clang_getSpellingLocation(location, &file, &line, &column, &offs);
 	fname = file_name_str(file);
 
-	printf("Referenced USR: %s, cursor_kind: %s, "
+	printf("USR: %s, cursor_kind: %s, "
 		"cursor_linkage: %s, "
 		"cursor_type: %s, spelling: %s, "
 		"line: %d, column: %d, offs: %d, "
@@ -133,15 +119,29 @@ enum CXChildVisitResult visitor(
 	if (clang_isDeclaration(cursor_kind))
 		prop = REF_PROP_DECL;
 
-	if (clang_isCursorDefinition(cursor))
-		prop |= REF_PROP_DEF;
+	if (cursor_kind == CXCursor_CompoundStmt) {
+		std::string pusr_str = cursor_usr_str(parent);
+		CXSourceLocation plocation =
+			clang_getCursorLocation(parent);
 
-	clang_getCursorReferenced(cursor);
-	if ((prop & REF_PROP_DECL) && !usr_str.empty()) {
+		prop |= REF_PROP_DEF | REF_PROP_DECL;
+		clang_getSpellingLocation(
+				plocation,
+				NULL,
+				&line, &column, &offs);
 		ref.assign(
 			prop,
 			line, column, offs, &fname);
-		db->del(usr_str.c_str(),
+
+		if (!pusr_str.empty())
+			db->set(pusr_str.c_str(),
+				&ref);
+
+	} else if (!usr_str.empty()) {
+		ref.assign(
+			prop,
+			line, column, offs, &fname);
+		db->set(usr_str.c_str(),
 			&ref);
 	}
 
@@ -171,7 +171,7 @@ int main(int argc, char **argv)
 			0, 0,
 			CXTranslationUnit_None);
 	n = clang_getNumDiagnostics(tu);
-	db = new walker_db(argv[1], 0, 0);
+	db = new walker_db(argv[1], 1, 0);
 	if (db->invalid) {
 		fprintf(stderr, "Failed to open %s\n", argv[1]);
 		delete db;
@@ -197,7 +197,6 @@ int main(int argc, char **argv)
 		db);
 	clang_disposeTranslationUnit(tu);
 	clang_disposeIndex(cxindex);
-out:
 	delete db;
 	return 0;
 }

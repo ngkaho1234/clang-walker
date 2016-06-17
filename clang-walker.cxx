@@ -137,7 +137,7 @@ enum CXChildVisitResult visitor(
 		prop |= REF_PROP_DEF;
 
 	clang_getCursorReferenced(cursor);
-	if (!usr_str.empty()) {
+	if ((prop & REF_PROP_DECL) && !usr_str.empty()) {
 		ref.assign(
 			prop,
 			line, column, offs, &fname);
