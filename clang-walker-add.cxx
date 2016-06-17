@@ -10,13 +10,13 @@
 #include <malloc.h>
 #include <string>
 
-static int symbol_del(
+static int symbol_add(
 		const char *usr,
 		walker_ref *ref,
 		void *args)
 {
 	walker_db *db = (walker_db *)args;
-	return db->del(usr, ref);
+	return db->set(usr, ref);
 }
 
 static void usage(int argc, char **argv)
@@ -64,7 +64,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	visitor.symbol_op = symbol_del;
+	visitor.symbol_op = symbol_add;
 	visitor.args = db;
 	clang_visitChildren(
 		clang_getTranslationUnitCursor(tu),

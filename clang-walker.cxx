@@ -1,8 +1,6 @@
 #include <stdint.h>
 
-#include "clang-walker-db.hxx"
-
-#include <clang-c/Index.h>
+#include "clang-walker.hxx"
 
 #include <assert.h>
 #include <stdio.h>
@@ -12,7 +10,12 @@
 #include <malloc.h>
 #include <string>
 
-std::string cursor_name_str(CXCursor cursor)
+//
+// These helpers are here to convert char * string to
+// std::string one.
+//
+
+static std::string cursor_name_str(CXCursor cursor)
 {
 	std::string str;
 	CXString name = clang_getCursorSpelling(cursor);
@@ -24,7 +27,7 @@ std::string cursor_name_str(CXCursor cursor)
 	return str;
 }
 
-std::string file_name_str(CXFile file)
+static std::string file_name_str(CXFile file)
 {
 	std::string str;
 	CXString fname = clang_getFileName(file);
@@ -36,7 +39,7 @@ std::string file_name_str(CXFile file)
 	return str;
 }
 
-std::string cursor_usr_str(CXCursor cursor)
+static std::string cursor_usr_str(CXCursor cursor)
 {
 	std::string str;
 	CXString usr = clang_getCursorUSR(cursor);
@@ -48,7 +51,7 @@ std::string cursor_usr_str(CXCursor cursor)
 	return str;
 }
 
-std::string cursor_type_str(CXCursor cursor)
+static std::string cursor_type_str(CXCursor cursor)
 {
 	std::string str;
 	CXString type = clang_getTypeKindSpelling(
@@ -61,7 +64,7 @@ std::string cursor_type_str(CXCursor cursor)
 	return str;
 }
 
-std::string cursor_kind_str(CXCursor cursor)
+static std::string cursor_kind_str(CXCursor cursor)
 {
 	std::string str;
 	CXString kind = clang_getCursorKindSpelling(
@@ -74,7 +77,10 @@ std::string cursor_kind_str(CXCursor cursor)
 	return str;
 }
 
-std::string cursor_linkage_str(CXCursor cursor)
+//
+// Get cursor linkage string
+//
+static std::string cursor_linkage_str(CXCursor cursor)
 {
 	std::string str;
 	CXLinkageKind linkage = clang_getCursorLinkage(cursor);
@@ -96,12 +102,13 @@ std::string cursor_linkage_str(CXCursor cursor)
 	return str;
 }
 
-enum CXChildVisitResult visitor(
+enum CXChildVisitResult walker_visitor(
 		CXCursor cursor,
 		CXCursor parent,
 		CXClientData data)
 {
-	walker_db *db = (walker_db *)data;
+	struct walker *visitor = (struct walker *)data;
+
 	CXCursor referenced = clang_getCursorReferenced(cursor);
 	CXCursorKind cursor_kind = clang_getCursorKind(cursor);
 	CXFile file;
@@ -112,9 +119,12 @@ enum CXChildVisitResult visitor(
 	std::string type_str = cursor_type_str(cursor);
 	std::string kind_str = cursor_kind_str(cursor);
 	CXSourceLocation location = clang_getCursorLocation(cursor);
+
 	unsigned int line, column, offs;
 	uint32_t prop = 0;
 	walker_ref ref;
+
+	visitor->retval = 0;
 
 	clang_getSpellingLocation(location, &file, &line, &column, &offs);
 	fname = file_name_str(file);
@@ -141,62 +151,13 @@ enum CXChildVisitResult visitor(
 		ref.assign(
 			prop,
 			line, column, offs, &fname);
-		db->set(usr_str.c_str(),
-			&ref);
+		visitor->retval = visitor->symbol_op(
+					usr_str.c_str(),
+					&ref,
+					visitor->args);
+		if (visitor->retval)
+			return CXChildVisit_Break;
 	}
 
 	return CXChildVisit_Recurse;
-}
-
-static void usage(int argc, char **argv)
-{
-	fprintf(stderr, "Usage: %s <Database File> <Arguments passed to libclang>\n", argv[0]);
-	exit(1);
-}
-
-int main(int argc, char **argv)
-{
-	int n;
-	CXIndex cxindex;
-	CXTranslationUnit tu;
-	walker_db *db;
-
-	if (argc < 3)
-		usage(argc, argv);
-
-	cxindex = clang_createIndex(0, 0);
-	tu = clang_parseTranslationUnit(
-			cxindex, 0,
-			argv + 2, argc - 2, // Skip over dbFilename
-			0, 0,
-			CXTranslationUnit_None);
-	n = clang_getNumDiagnostics(tu);
-	db = new walker_db(argv[1], 1, 0);
-	if (db->invalid) {
-		fprintf(stderr, "Failed to open %s\n", argv[1]);
-		delete db;
-		exit(1);
-	}
-
-	if (n > 0) {
-		int nr_errors = 0;
-		int i;
-		for (i = 0; i < n; ++i) {
-			CXDiagnostic diag = clang_getDiagnostic(tu, i);
-			CXString string = clang_formatDiagnostic(diag,
-						clang_defaultDiagnosticDisplayOptions());
-			fprintf(stderr, "%s\n", clang_getCString(string));
-			if (clang_getDiagnosticSeverity(diag) == CXDiagnostic_Error
-					|| clang_getDiagnosticSeverity(diag) == CXDiagnostic_Fatal)
-				nr_errors++;
-		}
-	}
-	clang_visitChildren(
-		clang_getTranslationUnitCursor(tu),
-		&visitor,
-		db);
-	clang_disposeTranslationUnit(tu);
-	clang_disposeIndex(cxindex);
-	delete db;
-	return 0;
 }
