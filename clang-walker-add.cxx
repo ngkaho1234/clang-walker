@@ -21,37 +21,41 @@ static int symbol_add(
 
 static void usage(int argc, char **argv)
 {
-	fprintf(stderr, "Usage: %s <Database File> <Arguments passed to libclang>\n", argv[0]);
+	fprintf(stderr, "Usage: %s <Database File> "
+			"<The output AST> "
+			"<Arguments passed to libclang>\n", argv[0]);
 	exit(1);
 }
 
 int main(int argc, char **argv)
 {
 	int n;
+	int nr_errors = 0;
 	CXIndex cxindex;
 	CXTranslationUnit tu;
 	walker_db *db;
 	struct walker visitor;
+	const char *db_fname = argv[1];
+	const char *ast_fname = argv[2];
 
-	if (argc < 3)
+	if (argc < 4)
 		usage(argc, argv);
 
 	cxindex = clang_createIndex(0, 0);
 	tu = clang_parseTranslationUnit(
 			cxindex, 0,
-			argv + 2, argc - 2, // Skip over dbFilename
+			argv + 3, argc - 3, // Skip over dbFilename and AST
 			0, 0,
 			CXTranslationUnit_None);
-	n = clang_getNumDiagnostics(tu);
-	db = new walker_db(argv[1], 1, 0);
+
+	db = new walker_db(db_fname, 1, 0);
 	if (db->invalid) {
-		fprintf(stderr, "Failed to open %s\n", argv[1]);
-		delete db;
-		exit(1);
+		fprintf(stderr, "Failed to open %s\n", db_fname);
+		goto out;
 	}
 
+	n = clang_getNumDiagnostics(tu);
 	if (n > 0) {
-		int nr_errors = 0;
 		int i;
 		for (i = 0; i < n; ++i) {
 			CXDiagnostic diag = clang_getDiagnostic(tu, i);
@@ -64,6 +68,16 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (!nr_errors) {
+		int ret;
+		ret = clang_saveTranslationUnit(tu, ast_fname, CXSaveTranslationUnit_None);
+		if (ret != CXSaveError_None) {
+			fprintf(stderr, "Failed to save AST to %s. Return value: %d\n",
+				ast_fname, ret);
+			goto out;
+		}
+	}
+
 	visitor.symbol_op = symbol_add;
 	visitor.args = db;
 	clang_visitChildren(
@@ -71,6 +85,7 @@ int main(int argc, char **argv)
 		walker_visitor,
 		&visitor);
 
+out:
 	clang_disposeTranslationUnit(tu);
 	clang_disposeIndex(cxindex);
 	delete db;

@@ -155,8 +155,10 @@ enum CXChildVisitResult walker_visitor(
 					usr_str.c_str(),
 					&ref,
 					visitor->args);
-		if (visitor->retval)
+		if (visitor->retval) {
+			fprintf(stderr, "Failed to do operation: %d\n", visitor->retval);
 			return CXChildVisit_Break;
+		}
 	}
 
 	return CXChildVisit_Recurse;

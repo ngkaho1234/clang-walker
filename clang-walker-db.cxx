@@ -106,11 +106,6 @@ bool walker_ref::operator ==(walker_ref &ref)
 	return false;
 }
 
-static int walker_db_key_cmp(
-		DB *db,
-		const DBT *dbt1,
-		const DBT *dbt2);
-
 void walker_db::cleanup()
 {
 	if (!invalid) {
@@ -125,11 +120,6 @@ walker_db::walker_db(const char *filename, int create, int rdonly) :
 	Db(NULL, DB_CXX_NO_EXCEPTIONS), dbc(NULL), invalid(0)
 {
 	int ret;
-	ret = set_bt_compare(walker_db_key_cmp);
-	if (ret) {
-		invalid = 1;
-		return;
-	}
 	ret = set_flags(DB_DUP);
 	if (ret) {
 		cleanup();
@@ -159,10 +149,10 @@ int walker_db::get(
 		walker_ref *ref)
 {
 	Dbc *new_dbc = NULL;
-	Dbt dbt_key, dbt_data;
+	Dbt dbt_key, dbt_ret, dbt_dump;
 	int ret = 0;
 	struct db_key *key;
-	struct ref_data *data;
+	void *key_res;
 	size_t usr_len = strlen(usr);
 	size_t key_len = sizeof(struct db_key) + usr_len;
 
@@ -183,13 +173,75 @@ int walker_db::get(
 	dbt_key.set_data(key);
 	dbt_key.set_size(key_len);
 
-	ret = new_dbc->get(&dbt_key, &dbt_data, DB_SET);
+	ret = new_dbc->get(&dbt_key, &dbt_dump, DB_SET_RANGE);
 	if (ret)
 		goto out;
 
-	data = (struct ref_data *)dbt_data.get_data();
-	assert(data);
-	ref->assign(data);
+	new_dbc->get(&dbt_ret, &dbt_dump, DB_CURRENT);
+	key_res = (struct ref_data *)dbt_ret.get_data();
+	assert(key_res);
+	if (dbt_ret.get_size() < key_len) {
+		ret = DB_NOTFOUND;
+		goto out;
+	}
+	if (memcmp(key_res, key, key_len)) {
+		ret = DB_NOTFOUND;
+		goto out;
+	}
+
+	ref->assign((struct ref_data *)((char *)key_res + key_len));
+
+out:
+	free(key);
+	if (!ret) {
+		std::string usr_str = usr;
+		set_dbc(new_dbc, usr_str);
+	} else {
+		if (new_dbc)
+			new_dbc->close();
+
+	}
+
+	return ret;
+}
+
+int walker_db::get_exact(
+		const char *usr,
+		walker_ref *ref)
+{
+	Dbc *new_dbc = NULL;
+	Dbt dbt_key, dbt_ret, dbt_dump;
+	int ret = 0;
+	struct db_key *key;
+	void *key_res;
+	size_t usr_len = strlen(usr);
+	size_t key_len = sizeof(struct db_key) + usr_len;
+	size_t total_len = key_len + ref->get_size();
+
+	clear_dbc();
+
+	key_res = key = (struct db_key *)malloc(total_len);
+	if (!key)
+		return -ENOMEM;
+
+	memset(key_res, 0, total_len);
+	ret = cursor(NULL, &new_dbc, DB_CURSOR_BULK);
+	if (ret)
+		goto out;
+
+	key->dk_hdr.kh_type = KEY_USR;
+	key->dk_usr_len = usr_len;
+	memcpy(key->dk_usr, usr, usr_len);
+	if (ref->get_size())
+		memcpy((char *)key_res + key_len, ref->get_data(),
+			ref->get_size());
+
+	dbt_key.set_data(key);
+	dbt_key.set_size(total_len);
+
+	ret = new_dbc->get(&dbt_key, &dbt_dump, DB_SET);
+	if (ret)
+		goto out;
 
 out:
 	free(key);
@@ -207,10 +259,9 @@ out:
 
 int walker_db::get_next(walker_ref *ref)
 {
-	Dbt dbt_key;
-	Dbt dbt_data;
+	Dbt dbt_key, dbt_dump;
 	int ret = 0;
-	struct ref_data *data;
+	void *key_res;
 	struct db_key *key;
 	size_t usr_len = curr_usr.length();
 	size_t key_len = sizeof(struct db_key) + usr_len;
@@ -220,27 +271,28 @@ int walker_db::get_next(walker_ref *ref)
 		return DB_NOTFOUND;
 	}
 
-	key = (struct db_key *)malloc(key_len);
-	if (!key)
-		return -ENOMEM;
-
-	dbt_key.set_data(key);
-	dbt_key.set_size(key_len);
-
-	key->dk_hdr.kh_type = KEY_USR;
-	key->dk_usr_len = usr_len;
-	memcpy(key->dk_usr, curr_usr.c_str(), usr_len);
-
-	ret = dbc->get(&dbt_key, &dbt_data, DB_NEXT_DUP);
+	ret = dbc->get(&dbt_key, &dbt_dump, DB_NEXT);
 	if (ret)
 		goto out;
 
-	data = (struct ref_data *)dbt_data.get_data();
-	assert(data);
-	ref->assign(data);
+	key_res = (struct ref_data *)dbt_key.get_data();
+	assert(key_res);
+	key = (struct db_key *)key_res;
+	if (key->dk_hdr.kh_type != KEY_USR) {
+		ret = DB_NOTFOUND;
+		goto out;
+	}
+	if (usr_len != key->dk_usr_len) {
+		ret = DB_NOTFOUND;
+		goto out;
+	}
+	if (memcmp(key->dk_usr, curr_usr.c_str(), usr_len)) {
+		ret = DB_NOTFOUND;
+		goto out;
+	}
 
+	ref->assign((struct ref_data *)((char *)key_res + key_len));
 out:
-	free(key);
 	return ret;
 }
 
@@ -249,19 +301,38 @@ int walker_db::set(
 		walker_ref *ref)
 {
 	Dbc *new_dbc = NULL;
-	Dbt dbt_key, dbt_data, dump;
+	Dbt dbt_key, dbt_fname_key, dbt_dump;
 	int ret = 0;
 	struct db_key *key;
-	struct ref_data *data = ref->get_data();
+	struct db_key_fname *key_fname;
+	void *key_res, *key_fname_res;
 	size_t usr_len = strlen(usr);
 	size_t key_len = sizeof(struct db_key) + usr_len;
+	size_t total_len = key_len + ref->get_size();
+
+	size_t fname_len;
+	size_t key_fname_len;
+	size_t total_fname_len;
+	std::string fname;
+	ref->get_fname(&fname);
+	fname_len = fname.length();
+	key_fname_len = sizeof(struct db_key_fname) + fname_len;
+	total_fname_len = key_fname_len + total_len;
 
 	clear_dbc();
 
-	key = (struct db_key *)malloc(key_len);
+	key_res = key = (struct db_key *)malloc(total_len);
 	if (!key)
 		return -ENOMEM;
 
+	key_fname_res = key_fname =
+		(struct db_key_fname *)malloc(total_fname_len);
+	if (!key) {
+		free(key);
+		return -ENOMEM;
+	}
+
+	memset(key_res, 0, total_len);
 	ret = cursor(NULL, &new_dbc, DB_CURSOR_BULK);
 	if (ret)
 		goto out;
@@ -269,87 +340,121 @@ int walker_db::set(
 	key->dk_hdr.kh_type = KEY_USR;
 	key->dk_usr_len = usr_len;
 	memcpy(key->dk_usr, usr, usr_len);
+	if (ref->get_size())
+		memcpy((char *)key_res + key_len, ref->get_data(),
+			ref->get_size());
 
 	dbt_key.set_data(key);
-	dbt_key.set_size(key_len);
+	dbt_key.set_size(total_len);
 
-	dbt_data.set_data(data);
-	dbt_data.set_size(ref->get_size());
+	key_fname->dk_hdr.kh_type = KEY_FNAME;
+	key_fname->dk_fname_len = fname_len;
+	memcpy(key_fname->dk_fname, fname.c_str(), fname_len);
+	memcpy((char *)key_fname_res + key_fname_len,
+		key,
+		total_len);
 
-	if (data->rd_prop & REF_PROP_DEF)
-		ret = new_dbc->put(&dbt_key, &dbt_data, DB_KEYFIRST);
-	else
-		ret = new_dbc->put(&dbt_key, &dbt_data, DB_KEYLAST);
+	dbt_fname_key.set_data(key_fname);
+	dbt_fname_key.set_size(total_fname_len);
 
-out:
-	free(key);
-	if (new_dbc)
-		new_dbc->close();
-	return ret;
-}
+	dbt_dump.set_size(0);
 
-int walker_db::del()
-{
-	int ret = 0;
-	if (dbc && !curr_usr.empty())
-		ret = dbc->del(0);
-
-	clear_dbc();
-	return ret;
-}
-
-int walker_db::del(
-		const char *usr,
-		walker_ref *ref)
-{
-	int ret = 0;
-	walker_ref ref_r;
-
-	ret = get(usr, &ref_r);
-	while (!ret) {
-		if (*ref == ref_r)
-			break;
-
-		ret = get_next(&ref_r);
-	}
+	ret = new_dbc->put(&dbt_key, &dbt_dump, DB_KEYLAST);
 	if (ret)
 		goto out;
 
-	ret = del();
+	ret = new_dbc->put(&dbt_fname_key, &dbt_dump, DB_KEYLAST);
+	if (ret)
+		goto out;
+
 out:
+	free(key);
+	free(key_fname);
+	if (new_dbc)
+		new_dbc->close();
+
 	return ret;
 }
 
-/*
- * Walker DB comparsion function.
- * This routine compares the db_key structure,
- *
- * @db: The database handle
- * @dbt1: The caller-supplied key
- * @dbt2: The in-tree key
- */
-static int walker_db_key_cmp(
-		DB *db,
-		const DBT *dbt1,
-		const DBT *dbt2)
+int walker_db::del_fname(const char *fname)
 {
-	int res;
-	struct db_key *key1 = (struct db_key *)dbt1->data;
-	struct db_key *key2 = (struct db_key *)dbt2->data;
+	Dbc *new_dbc = NULL;
+	Dbt dbt_fname_key, dbt_ret, dbt_dump;
+	int ret = 0;
+	struct db_key_fname *key_fname = NULL;
+	void *key_res;
+	size_t fname_len = strlen(fname);
+	size_t key_fname_len = sizeof(struct db_key_fname) + fname_len;
 
-	(void)db;
-	if (key1->dk_hdr.kh_type < key2->dk_hdr.kh_type)
-		return -1;
+	clear_dbc();
 
-	if (key1->dk_hdr.kh_type > key2->dk_hdr.kh_type)
-		return 1;
+	key_fname = (struct db_key_fname *)malloc(key_fname_len);
+	if (!key_fname)
+		return -ENOMEM;
 
-	if (key1->dk_usr_len < key2->dk_usr_len)
-		return -1;
+	ret = cursor(NULL, &new_dbc, DB_CURSOR_BULK);
+	if (ret)
+		goto out;
 
-	if (key1->dk_usr_len > key2->dk_usr_len)
-		return 1;
+	key_fname->dk_hdr.kh_type = KEY_FNAME;
+	key_fname->dk_fname_len = fname_len;
+	memcpy(key_fname->dk_fname, fname, fname_len);
 
-	res = memcmp(key1->dk_usr, key2->dk_usr, key1->dk_usr_len);
-	return res;
+	dbt_fname_key.set_data(key_fname);
+	dbt_fname_key.set_size(key_fname_len);
+
+	while (!ret) {
+		Dbc *del_dbc = NULL;
+		Dbt dbt_key;
+		void *key;
+		size_t key_len;
+
+		ret = new_dbc->get(&dbt_fname_key, &dbt_dump, DB_SET_RANGE);
+		if (ret)
+			break;
+
+		new_dbc->get(&dbt_ret, &dbt_dump, DB_CURRENT);
+		key_res = (struct ref_data *)dbt_ret.get_data();
+		assert(key_res);
+		if (dbt_ret.get_size() < key_fname_len)
+			break;
+
+		if (memcmp(key_res, key_fname, key_fname_len))
+			break;
+
+		key_len = dbt_ret.get_size() - key_fname_len;
+		key = malloc(key_len);
+		if (!key)
+			break;
+
+		memcpy(key, (char *)dbt_ret.get_data() + key_fname_len,
+				key_len);
+
+		ret = cursor(NULL, &del_dbc, DB_CURSOR_BULK);
+		if (ret) {
+			free(key);
+			goto out;
+		}
+
+		dbt_key.set_data(key);
+		dbt_key.set_size(key_len);
+
+		ret = del_dbc->get(&dbt_key, &dbt_dump, DB_SET);
+		if (!ret)
+			del_dbc->del(0);
+
+		del_dbc->close();
+		free(key);
+
+		new_dbc->del(0);
+	}
+	if (ret == DB_NOTFOUND)
+		ret = 0;
+
+out:
+	free(key_fname);
+	if (new_dbc)
+		new_dbc->close();
+
+	return ret;
 }

@@ -6,6 +6,7 @@
 #include <string>
 
 #define KEY_USR 0
+#define KEY_FNAME 1
 
 #define REF_PROP_DECL 1
 #define REF_PROP_DEF 2
@@ -15,12 +16,18 @@
  */
 struct db_key_hdr {
 	uint32_t	kh_type;
-};
+} __attribute__((packed));
 
 struct db_key {
 	struct db_key_hdr dk_hdr;
 	uint32_t	dk_usr_len;
 	char		dk_usr[0];
+} __attribute__((packed));
+
+struct db_key_fname {
+	struct db_key_hdr dk_hdr;
+	uint32_t	dk_fname_len;
+	char		dk_fname[0];
 } __attribute__((packed));
 
 struct ref_data {
@@ -104,15 +111,16 @@ public:
 	int get(const char *usr,
 		walker_ref *ref);
 
+	int get_exact(
+		const char *usr,
+		walker_ref *ref);
+
 	int get_next(walker_ref *ref);
 
 	int set(const char *usr,
 		walker_ref *ref);
 
-	int del();
-
-	int del(const char *usr,
-		walker_ref *ref);
+	int del_fname(const char *fname);
 };
 
 #endif // _CLANG_WALKER_DB_HXX_
